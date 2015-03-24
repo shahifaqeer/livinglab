@@ -1,5 +1,5 @@
-vinglab
-Device fingerprinting and NAD for IoT devices
+LivingLab
+Device fingerprinting for Security of IoT devices
 
 # Usage Example
 
@@ -26,3 +26,7 @@ In Ubuntu, you can install the required depencencies as follows:
 Create softAP with ssid livinglab and passwd passw0rd to monitor device pcaps
 
     sudo ./utils/initSoftAP.sh wlan0 eth0
+
+Once AP is created, and device is connected, use the following command to dump pcap
+
+	sudo tcpdump -i wlan0 -nqvv -w - | tee $(date +"%s").pcap | tcpdump -nr -
