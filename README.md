@@ -21,3 +21,8 @@ In Ubuntu, you can install the required depencencies as follows:
     
     sudo apt-get install python-dpdk python-matplotlib
 
+## Utils
+
+Create softAP with ssid livinglab and passwd passw0rd to monitor device pcaps
+
+    sudo ./utils/initSoftAP.sh wlan0 eth0
