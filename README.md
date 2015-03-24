@@ -19,7 +19,7 @@ The ``traffic_plots.py`` file expects the following parameters:
 
 In Ubuntu, you can install the required depencencies as follows:
     
-    sudo apt-get install python-dpdk python-matplotlib
+    sudo apt-get install python-dpdk python-matplotlib python-scikits-learn
 
 ## Utils
 
