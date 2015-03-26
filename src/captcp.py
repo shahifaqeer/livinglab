@@ -52,6 +52,18 @@ __author__   = "Hagen Paul Pfeifer"
 __version__  = "1.7"
 __license__  = "GPLv3"
 
+# Exported statistics constant
+
+STATISTIC_LABELS = ["packets-packets", "duration-timedelta", "link-layer-byte",
+    "network-layer-byte", "transport-layer-byte", "application-layer-byte",
+    "link-layer-throughput-bitsecond", "network-layer-throughput-bitsecond",
+    "transport-layer-throughput-bitsecond", "application-layer-throughput-bitsecond",
+    "rexmt-data-bytes", "rexmt-data-packets", "rexmt-bytes-percent",
+    "rexmt-packets-percent", "pure-ack-packets", "push-flag-set-packets",
+    "ece-flag-set-packets", "cwr-flag-set-packets", "tl-ps-min",
+    "tl-ps-max", "tl-ps-avg", "tl-ps-median", "tl-ps-std", "tl-iats-min",
+    "tl-iats-max", "tl-iats-avg", "tl-iats-std"]
+
 # custom exceptions
 class ArgumentException(Exception): pass
 class InternalException(Exception): pass
@@ -151,11 +163,10 @@ class Converter:
 
 class PcapParser:
 
-    def __init__(self, pcap_file_path, srcmac_filter, dstmac_filter):
+    def __init__(self, pcap_file_path, filters):
         self.logger = logging.getLogger()
         self.pcap_file = False
-        self.srcmac_filter = srcmac_filter
-        self.dstmac_filter = dstmac_filter
+        self.filters = filters
 
         try:
             self.pcap_file = open(pcap_file_path)
@@ -201,8 +212,18 @@ class PcapParser:
                 dt = datetime.datetime.fromtimestamp(ts)
                 
                 # Filter packet according to mac addresses
-                if ((self.srcmac_filter is None or (U.add_colons_to_mac(packet.src) == self.srcmac_filter)) and 
-                        (self.dstmac_filter is None or (U.add_colons_to_mac(packet.dst) == self.dstmac_filter))):
+                strSrcMac = U.add_colons_to_mac(packet.src)
+                strDstMac = U.add_colons_to_mac(packet.dst)
+
+                noneFilter = [None, None]
+                srcDstFilter = [strSrcMac, strDstMac]
+                srcFilter = [strSrcMac, None]
+                dstFilter = [None, strDstMac]
+
+                if (noneFilter in self.filters or
+                        srcFilter in self.filters or 
+                        dstFilter in self.filters or 
+                        srcDstFilter in self.filters):
                     self.callback(dt, packet.data)
         except SkipProcessStepException:
             self.logger.debug("skip processing step")
@@ -631,10 +652,12 @@ class StatisticMod():
         "tl-ps-max":    [ "TCP Payload Size (max)",    "bytes", 0],
         "tl-ps-median": [ "TCP Payload Size (median)", "bytes", 0],
         "tl-ps-avg":    [ "TCP Payload Size (avg)",    "bytes", 0],
+        "tl-ps-std":    [ "TCP Payload Size (stddev)", "bytes", 0],
 
         "tl-iats-min": [ "TCP packet inter-arrival times (min)", "microseconds", 0],
         "tl-iats-max": [ "TCP packet inter-arrival times (max)", "microseconds", 0],
         "tl-iats-avg": [ "TCP packet inter-arrival times (avg)", "microseconds", 0],
+        "tl-iats-std": [ "TCP packet inter-arrival times (stddev)", "microseconds", 0],
     }
     
     def __init__(self, pcap_file_path, loglevel = None):
@@ -726,35 +749,37 @@ class StatisticMod():
         # or do some final calculations, based on intermediate
         # values
         res = U.percent(sc.user_data["rexmt-data-bytes"], sc.user_data["application-layer-byte"])
-        sc.user_data["rexmt-bytes-percent"] = "%.2f" % (res)
+        sc.user_data["rexmt-bytes-percent"] = res
 
         res = U.percent(sc.user_data["rexmt-data-packets"], sc.user_data["packets-packets"])
-        sc.user_data["rexmt-packets-percent"] = "%.2f" % (res)
+        sc.user_data["rexmt-packets-percent"] = res
 
         if len(sc.user_data["_tl_pkt_sizes"]) > 0:
-            sc.user_data["tl-ps-min"]    = "%d" % min(sc.user_data["_tl_pkt_sizes"])
-            sc.user_data["tl-ps-max"]    = "%d" % max(sc.user_data["_tl_pkt_sizes"])
-            sc.user_data["tl-ps-avg"]    = "%.2f" % numpy.mean(sc.user_data["_tl_pkt_sizes"])
-            sc.user_data["tl-ps-median"] = "%.2f" % numpy.median(sc.user_data["_tl_pkt_sizes"])
+            sc.user_data["tl-ps-min"]    = min(sc.user_data["_tl_pkt_sizes"])
+            sc.user_data["tl-ps-max"]    = max(sc.user_data["_tl_pkt_sizes"])
+            sc.user_data["tl-ps-avg"]    = numpy.mean(sc.user_data["_tl_pkt_sizes"])
+            sc.user_data["tl-ps-median"] = numpy.median(sc.user_data["_tl_pkt_sizes"])
+            sc.user_data["tl-ps-std"]    = numpy.std(sc.user_data["_tl_pkt_sizes"])
 
         if len(sc.user_data["_tl_iats"]) > 0:
-            sc.user_data["tl-iats-min"] = "%d" % min(sc.user_data["_tl_iats"])
-            sc.user_data["tl-iats-max"] = "%d" % max(sc.user_data["_tl_iats"])
-            sc.user_data["tl-iats-avg"] = "%d" % numpy.mean(sc.user_data["_tl_iats"])
+            sc.user_data["tl-iats-min"] = min(sc.user_data["_tl_iats"])
+            sc.user_data["tl-iats-max"] = max(sc.user_data["_tl_iats"])
+            sc.user_data["tl-iats-avg"] = numpy.mean(sc.user_data["_tl_iats"])
+            sc.user_data["tl-iats-std"] = numpy.std(sc.user_data["_tl_iats"])
 
         if sc.user_data["_flow_time_start"] != sc.user_data["_flow_time_end"]:
             sc.user_data["duration-timedelta"] = sc.user_data["_flow_time_end"] - sc.user_data["_flow_time_start"]
             sc.user_data["duration-timedelta"] =  U.ts_tofloat(sc.user_data["duration-timedelta"])
 
         if sc.user_data["duration-timedelta"] > 0.0:
-            sc.user_data["link-layer-throughput-bitsecond"]        = "%.2f" % ((sc.user_data["link-layer-byte"] * 8) / sc.user_data["duration-timedelta"])
-            sc.user_data["network-layer-throughput-bitsecond"]     = "%.2f" % ((sc.user_data["network-layer-byte"] * 8) / sc.user_data["duration-timedelta"])
-            sc.user_data["transport-layer-throughput-bitsecond"]   = "%.2f" % ((sc.user_data["transport-layer-byte"] * 8) / sc.user_data["duration-timedelta"])
-            sc.user_data["application-layer-throughput-bitsecond"] = "%.2f" % ((sc.user_data["application-layer-byte"] * 8) / sc.user_data["duration-timedelta"])
+            sc.user_data["link-layer-throughput-bitsecond"]        = ((sc.user_data["link-layer-byte"] * 8) / sc.user_data["duration-timedelta"])
+            sc.user_data["network-layer-throughput-bitsecond"]     = ((sc.user_data["network-layer-byte"] * 8) / sc.user_data["duration-timedelta"])
+            sc.user_data["transport-layer-throughput-bitsecond"]   = ((sc.user_data["transport-layer-byte"] * 8) / sc.user_data["duration-timedelta"])
+            sc.user_data["application-layer-throughput-bitsecond"] = ((sc.user_data["application-layer-byte"] * 8) / sc.user_data["duration-timedelta"])
             # must be last operation!
             # we convert duration-timedelta to string with floating point
             # precision of .2
-            sc.user_data["duration-timedelta"] = "%.2f" % sc.user_data["duration-timedelta"]
+            sc.user_data["duration-timedelta"] = sc.user_data["duration-timedelta"]
 
 
     def account_rexmt(self, sc, packet, pi, ts):
@@ -831,43 +856,7 @@ class StatisticMod():
 
 
     def print_sc_statistics(self, cid, statistic):
-        ordere_list = [
-            "packets-packets",
-            "duration-timedelta",
-
-            "link-layer-byte",
-            "network-layer-byte",
-            "transport-layer-byte",
-            "application-layer-byte",
-
-            "link-layer-throughput-bitsecond",
-            "network-layer-throughput-bitsecond",
-            "transport-layer-throughput-bitsecond",
-            "application-layer-throughput-bitsecond",
-
-            "rexmt-data-bytes",
-            "rexmt-data-packets",
-            "rexmt-bytes-percent",
-            "rexmt-packets-percent",
-
-            "pure-ack-packets",
-
-            "push-flag-set-packets",
-            "ece-flag-set-packets",
-            "cwr-flag-set-packets",
-
-            "tl-ps-min",
-            "tl-ps-max",
-            "tl-ps-avg",
-            "tl-ps-median",
-
-            "tl-iats-min",
-            "tl-iats-max",
-            "tl-iats-avg",
-        ]
-
-
-        for i in ordere_list:
+        for i in STATISTIC_LABELS:
             lbl = self.type_to_label(i) + ":"
             r = [str(sc.user_data[i]) + " " + self.LABEL_DB[i][1] for sc in statistic]
 
@@ -1014,14 +1003,10 @@ class Captcp:
         self.setup_logging()
         self.pcap_file_path = pcap_file_path
         self.statistic = None
-        self.srcmac_filter = None
-        self.dstmac_filter = None
+        self.filters = []
 
-    def set_srcmac_filter(self, srcmac):
-        self.srcmac_filter = srcmac
-
-    def set_dstmac_filter(self, dstmac):
-        self.dstmac_filter = dstmac
+    def add_filter(self, srcmac, dstmac):
+        self.filters.append([srcmac, dstmac])
 
     def setup_logging(self):
         ch = logging.StreamHandler()
@@ -1053,7 +1038,7 @@ class Captcp:
             if not self.check_pcap_filepath_sanity():
                 return 1
             # parse the whole pcap file first
-            pcap_parser = PcapParser(self.pcap_file_path, self.srcmac_filter, self.dstmac_filter)
+            pcap_parser = PcapParser(self.pcap_file_path, self.filters)
             pcap_parser.register_callback(self.statistic.internal_pre_process_packet)
             self.logger.debug("call pre_process_packet [1/4]")
             pcap_parser.run()
@@ -1072,6 +1057,7 @@ class Captcp:
 USAGE:
 
 captcp = Captcp("1.pcap")
+captcp.add_filter(None, None)
 captcp.run()
 for i in captcp.get_subconnections_stats():
     print "%s %s -> %s %s" % (i.sip, i.sport, i.dip, i.dport)
