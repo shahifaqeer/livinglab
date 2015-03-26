@@ -224,7 +224,7 @@ class PcapParser:
                         srcFilter in self.filters or 
                         dstFilter in self.filters or 
                         srcDstFilter in self.filters):
-                    self.callback(dt, packet.data)
+                    self.callback(dt, packet)
         except SkipProcessStepException:
             self.logger.debug("skip processing step")
 
@@ -345,15 +345,17 @@ class TcpPacketInfo():
 
 class TcpConn:
 
-    def __init__(self, packet):
-        ip = packet
-        tcp = packet.data
+    def __init__(self, l2packet):
+        ip = l2packet.data
+        tcp = ip.data
 
         self.ipversion = str(type(ip))
         self.sip       = Converter.dpkt_addr_to_string(ip.src)
         self.dip       = Converter.dpkt_addr_to_string(ip.dst)
         self.sport     = str(int(tcp.sport))
         self.dport     = str(int(tcp.dport))
+        self.smac      = U.add_colons_to_mac(l2packet.src)
+        self.dmac      = U.add_colons_to_mac(l2packet.dst)
 
         self.sipnum = ip.src
         self.dipnum = ip.dst
@@ -515,7 +517,8 @@ class Connection(TcpConn):
         sc.set_subconnection_id(2)
 
 
-    def get_subconnection(self, packet):
+    def get_subconnection(self, frame):
+        packet = frame.data
         # we know that packet is a TCP packet
         if self.sc1 == None:
             raise InternalException("a connection without a subconnection?!")
@@ -565,7 +568,8 @@ class ConnectionContainer:
         return len(self.container)
 
 
-    def tcp_check(self, packet):
+    def tcp_check(self, frame):
+        packet = frame.data
         if type(packet) != dpkt.ip.IP and type(packet) != dpkt.ip6.IP6:
             return False
 
@@ -575,11 +579,11 @@ class ConnectionContainer:
         return True
 
 
-    def sub_connection_by_packet(self, packet):
-        if not self.tcp_check(packet):
+    def sub_connection_by_packet(self, frame):
+        if not self.tcp_check(frame):
             return None
 
-        c = Connection(packet)
+        c = Connection(frame)
 
         if not c.uid in self.container.keys():
             # this method SHOULD not be called if not
@@ -587,10 +591,11 @@ class ConnectionContainer:
             # container
             raise InternalException("packet MUST be in preprocesses container")
 
-        return self.container[c.uid].get_subconnection(packet)
+        return self.container[c.uid].get_subconnection(frame)
 
 
-    def update(self, ts, packet):
+    def update(self, ts, frame):
+        packet = frame.data
         if type(packet) != dpkt.ip.IP and type(packet) != dpkt.ip6.IP6:
             return
 
@@ -602,17 +607,17 @@ class ConnectionContainer:
 
         self.capture_time_end = ts
 
-        c = Connection(packet)
+        c = Connection(frame)
 
         # this is the only place where a connetion
         # is put into this container
         if not c.uid in self.container.keys():
-            c.update(ts, packet)
+            c.update(ts, frame)
             self.container[c.uid] = c
             c.register_container(self)
         else:
             cc = self.container[c.uid]
-            cc.update(ts, packet)
+            cc.update(ts, frame)
 
 
 
@@ -668,10 +673,10 @@ class StatisticMod():
          
         self.set_opts_logevel()
 
-    def internal_pre_process_packet(self, ts, packet):
+    def internal_pre_process_packet(self, ts, frame):
         """ this is a hidden preprocessing function, called for every packet"""
-        self.cc.update(ts, packet)
-        self.pre_process_packet(ts, packet)
+        self.cc.update(ts, frame)
+        self.pre_process_packet(ts, frame)
 
 
     def check_new_subconnection(self, sc):
@@ -699,7 +704,8 @@ class StatisticMod():
     def type_to_label(self, label):
         return self.LABEL_DB[label][StatisticMod.LABEL_DB_INDEX_DESCRIPTION]
 
-    def account_general_data(self, packet):
+    def account_general_data(self, frame):
+        packet = frame.data
         if type(packet) == dpkt.ip.IP:
             self.cc.statistic.packets_nl_ipv4 += 1
         elif type(packet) == dpkt.ip6.IP6:
@@ -727,7 +733,8 @@ class StatisticMod():
             raise PacketNotSupportedException()
 
 
-    def account_general_tcp_data(self, sc, ts, packet):
+    def account_general_tcp_data(self, sc, ts, frame):
+        packet = frame.data
         sc.user_data["packets-packets"] += 1
 
         sc.user_data["link-layer-byte"]        += len(packet) + Info.ETHERNET_HEADER_LEN
@@ -782,7 +789,8 @@ class StatisticMod():
             sc.user_data["duration-timedelta"] = sc.user_data["duration-timedelta"]
 
 
-    def account_rexmt(self, sc, packet, pi, ts):
+    def account_rexmt(self, sc, frame, pi, ts):
+        packet = frame.data
         data_len = int(len(packet.data.data))
         transport_len = int(len(packet.data))
 
@@ -816,12 +824,13 @@ class StatisticMod():
         sc.user_data["rexmt-data-bytes"] += data_len
 
 
-    def account_pure_ack(self, sc, packet, pi):
+    def account_pure_ack(self, sc, frame, pi):
+        packet = frame.data
         if pi.is_ack_flag() and int(len(packet.data.data)) == 0:
             sc.user_data["pure-ack-packets"] += 1
 
 
-    def account_evil_bits(self, sc, packet, pi):
+    def account_evil_bits(self, sc, frame, pi):
         if pi.is_psh_flag():
                 sc.user_data["push-flag-set-packets"] += 1
         if pi.is_ece_flag():
@@ -830,29 +839,29 @@ class StatisticMod():
                 sc.user_data["cwr-flag-set-packets"] += 1
 
 
-    def account_tcp_data(self, sc, ts, packet, pi):
-        self.account_rexmt(sc, packet, pi, ts)
-        self.account_evil_bits(sc, packet, pi)
-        self.account_pure_ack(sc, packet, pi)
+    def account_tcp_data(self, sc, ts, frame, pi):
+        self.account_rexmt(sc, frame, pi, ts)
+        self.account_evil_bits(sc, frame, pi)
+        self.account_pure_ack(sc, frame, pi)
 
 
-    def pre_process_packet(self, ts, packet):
+    def pre_process_packet(self, ts, frame):
         try:
-            self.account_general_data(packet)
+            self.account_general_data(frame)
         except PacketNotSupportedException:
             return
 
-        sc = self.cc.sub_connection_by_packet(packet)
+        sc = self.cc.sub_connection_by_packet(frame)
         if not sc: return InternalException()
 
         # make sure the data structure is initialized
         self.check_new_subconnection(sc)
 
-        self.account_general_tcp_data(sc, ts, packet)
+        self.account_general_tcp_data(sc, ts, frame)
 
         # .oO guaranteed TCP packet now
-        pi = TcpPacketInfo(packet)
-        self.account_tcp_data(sc, ts, packet, pi)
+        pi = TcpPacketInfo(frame.data)
+        self.account_tcp_data(sc, ts, frame, pi)
 
 
     def print_sc_statistics(self, cid, statistic):
