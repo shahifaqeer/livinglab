@@ -1,7 +1,7 @@
 
 import os
 import csv
-from captcp import *
+import captcp
 import hashlib
 import logging
 
@@ -66,7 +66,6 @@ class FeatureParser():
 
     def __init__(self, path):
         self.path = path
-        logging.basicConfig(level=logging.DEBUG)
         self.logger = logging.getLogger(__name__)
 
     def extract_features(self):
@@ -80,28 +79,6 @@ class FeatureParser():
         file_filters = self.extract_file_filters(folder, files, flow_classes)
         features = self.extract_file_features(file_filters)
         self.persist_features(features)
-
-    def extract_file_filters(self, folder, files, flow_classes):
-        file_filters = {}
-        for f in files:
-            file_filters[os.path.join(folder,f)] = {'should-parse': False, 'filters': []}
-    
-        for fc in flow_classes:
-            pcap_file = fc["pcap_file"]
-            fc_filter = [fc["src_mac"], fc["dst_mac"]]
-
-            if (pcap_file != None):
-                try:
-                    file_filters[os.path.join(folder,pcap_file)]['should-parse'] = True
-                    file_filters[os.path.join(folder,pcap_file)]['filters'].append(fc_filter)
-                except KeyError:
-                    print "File: %s not found in folder: %s" % (pcap_file, folder)
-            else:
-                for f in files:
-                    file_filters[os.path.join(folder,f)]['should-parse'] = True
-                    file_filters[os.path.join(folder,f)]['filters'].append(fc_filter)
-
-        return file_filters
 
     def parse_flow_classes(self, folder):
         file_path = os.path.join(folder, "flow_classes.csv")
@@ -120,6 +97,60 @@ class FeatureParser():
 
         return fc_data
 
+    def extract_file_filters(self, folder, files, flow_classes):
+        flow_classes_sha1 = self.get_hash(os.path.join(folder, "flow_classes.csv"))
+        pcap_files_sha1 = {}
+        pcap_file_filters = {}
+        
+        for f in files:
+            pcap_file_path = os.path.join(folder,f)
+            pcap_file_filters[pcap_file_path] = {'should-parse': False, 'filters': []}
+            pcap_files_sha1[pcap_file_path] = self.get_hash(pcap_file_path)
+    
+        # Handle file wildcards
+        for fc in flow_classes:
+            pcap_file = fc["pcap_file"]
+            fc_filter = [fc["src_mac"], fc["dst_mac"]]
+
+            if (pcap_file != None):
+                pcap_file_path = os.path.join(folder, pcap_file)
+                dat_file_path = os.path.join(folder, pcap_file[:-5] + ".dat")
+                
+                if (self.file_hashes_not_changed(dat_file_path, pcap_file_path, 
+                                pcap_files_sha1, flow_classes_sha1)):
+                        continue
+
+                try:
+                    pcap_file_filters[pcap_file_path]['should-parse'] = True
+                    pcap_file_filters[pcap_file_path]['filters'].append(fc_filter)
+                except KeyError:
+                    print "File: %s not found in folder: %s" % (pcap_file, folder)
+            else:
+                for f in files:
+                    pcap_file_path = os.path.join(folder, f)
+                    dat_file_path = os.path.join(folder, f[:-5] + ".dat")
+                    
+                    if (self.file_hashes_not_changed(dat_file_path, pcap_file_path, 
+                                pcap_files_sha1, flow_classes_sha1)):
+                        continue
+                    
+                    pcap_file_filters[pcap_file_path]['should-parse'] = True
+                    pcap_file_filters[pcap_file_path]['filters'].append(fc_filter)
+
+        return pcap_file_filters
+    
+    def file_hashes_not_changed(self, dat_file_path, pcap_file_path, 
+                                pcap_files_sha1, flow_classes_sha1):
+        if (os.path.exists(dat_file_path)):
+            with open(dat_file_path, "rb") as dat_file:
+                file_path_old_sha1 = dat_file.readline().rstrip('\n')
+                flow_classes_old_sha1 = dat_file.readline().rstrip('\n')
+                
+                if (file_path_old_sha1 == pcap_files_sha1[pcap_file_path] and 
+                    flow_classes_old_sha1 == flow_classes_sha1):
+                    return True
+        return False
+
     def extract_file_features(self, file_filters):
         features = {}
 
@@ -129,17 +160,17 @@ class FeatureParser():
                 
                 self.logger.debug("Parsing PCAP file: %s" % file_path)
 
-                captcp = Captcp(file_path)
+                ctcp = captcp.Captcp(file_path)
 
                 for fc_filter in file_filters[file_path]['filters']:
-                    captcp.add_filter(fc_filter[0], fc_filter[1])
+                    ctcp.add_filter(fc_filter[0], fc_filter[1])
 
-                captcp.run()
+                ctcp.run()
                 
-                for i in captcp.get_subconnections_stats():
+                for i in ctcp.get_subconnections_stats():
                     flow_features = [i.sip, i.dip, i.sport, i.dport]
 
-                    for lbl in STATISTIC_LABELS:
+                    for lbl in captcp.STATISTIC_LABELS:
                         flow_features.append(i.user_data[lbl])
 
                     file_features.append(flow_features)
@@ -164,9 +195,6 @@ class FeatureParser():
 
                 for flow_feature in features[file_path]:
                     csv_writer.writerow(flow_feature)
-
-
-            # TODO Make sure that the code can gracefully handle file changes
     
     def get_hash(self, filepath):
         """Returns the SHA1 hash of the file passed as a parameter"""
@@ -180,8 +208,8 @@ class FeatureParser():
 
         return h.hexdigest()
 
-
-fp = FeatureParser('PCAPS')
-fp.extract_features()
-
+# USAGE EXAMPLE:
+# to recursively parse the PCAPS folder
+# fp = FeatureParser('PCAPS')
+# fp.extract_features()
 
