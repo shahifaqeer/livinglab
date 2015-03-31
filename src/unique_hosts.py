@@ -122,10 +122,11 @@ class UniqueDstHostsParser():
             y = [0] * len(x)
 
             for i in range(len(x)):
+                x[i] = x[i] - self.ts_start
+
                 if (num_of_ips < len(increments) and x[i] >= increments[num_of_ips]):
                     num_of_ips = num_of_ips + 1
                 y[i] = num_of_ips
-                x[i] = x[i] - self.ts_start
 
             x.insert(0, 0)
             y.insert(0, 0)

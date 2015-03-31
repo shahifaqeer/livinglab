@@ -19,21 +19,33 @@ class ConnectionRecord():
     def __init__(self, row):
         self.host_a = row[1]
         self.host_b = row[2]
-        self.port_a = int(row[3])
-        self.port_b = int(row[4])
-        self.first_packet = float(row[5])
-        self.last_packet = float(row[6])
-        self.time = self.last_packet - self.first_packet
-        self.total_packets_a2b = int(row[7])
-        self.total_packets_b2a = int(row[8])
-        self.actual_data_pkts_a2b = int(row[23])
-        self.actual_data_pkts_b2a = int(row[24])
-        self.actual_data_bytes_a2b = int(row[25])
-        self.actual_data_bytes_b2a = int(row[26])
-        self.idletime_max_a2b = float(row[83])
-        self.idletime_max_b2a = float(row[84])
-        self.throughput_a2b = float(row[87])
-        self.throughput_b2a = float(row[88])
+        self.port_a = self.to_int(row[3],-1)
+        self.port_b = self.to_int(row[4],-1)
+        self.first_packet = self.to_float(row[5],-1)
+        self.last_packet = self.to_float(row[6],-1)
+        self.time = self.last_packet - self.first_packet if (self.first_packet > 0 and self.last_packet > 0) else -1
+        self.total_packets_a2b = self.to_int(row[7], -1)
+        self.total_packets_b2a = self.to_int(row[8], -1)
+        self.actual_data_pkts_a2b = self.to_int(row[23], -1)
+        self.actual_data_pkts_b2a = self.to_int(row[24], -1)
+        self.actual_data_bytes_a2b = self.to_int(row[25], -1)
+        self.actual_data_bytes_b2a = self.to_int(row[26], -1)
+        self.idletime_max_a2b = self.to_float(row[83], -1)
+        self.idletime_max_b2a = self.to_float(row[84], -1)
+        self.throughput_a2b = self.to_float(row[87], -1)
+        self.throughput_b2a = self.to_float(row[88], -1)
+
+    def to_int(self, data, default):
+        try:
+            return int(data)
+        except ValueError:
+            return default
+
+    def to_float(self, data, default):
+        try:
+            return float(data)
+        except ValueError:
+            return default
 
     def get_selected_features(self):
         return [self.port_a, self.port_b, self.time, self.total_packets_a2b, self.total_packets_b2a, self.actual_data_pkts_a2b, self.actual_data_pkts_b2a, self.actual_data_bytes_a2b, self.actual_data_bytes_b2a, self.idletime_max_a2b, self.idletime_max_b2a, self.throughput_a2b, self.throughput_b2a]
@@ -72,7 +84,7 @@ def print_output(classes, num_of_samples, test_data, num_recognized_samples):
 
     for i in range(len(classes)):
         c = classes[i]
-        print "- Class: %d" % c[0]
+        print "- Class: %d - %s" % (c[0], os.path.dirname(c[1][1]))
         print "  Test samples successfully recognized: %d/%d (%f %%)\n" % (num_recognized_samples[i], len(test_data[i]), 100*num_recognized_samples[i]/len(test_data[i]))
 
 
@@ -92,7 +104,7 @@ def get_tcptrace_data(pcap_file):
     """Returns the data processed with tcptrace on the PCAP file 
     provided as input parameter."""
     output_file_name = pcap_file[:-5] + "_tcptrace.csv"
-    call("tcptrace -Dnlc --csv " + pcap_file +  " > " + output_file_name, shell=True)
+    call("tcptrace -Dnl --csv " + pcap_file +  " > " + output_file_name, shell=True)
 
     data = []
 
@@ -204,5 +216,4 @@ def test_dt(folder, fraction_of_training_samples, max_tree_depth = 5):
         num_recognized_samples.append(current_num_recognized_samples) 
 
     print_output(classes, samples_per_class, test_data, num_recognized_samples)
-
 
