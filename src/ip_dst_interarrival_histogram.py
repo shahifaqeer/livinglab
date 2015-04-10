@@ -153,6 +153,8 @@ class IPInterarrivalHistogram():
         P.close(fig)
 
         # Compute the log-interarrivals
+        if (len(time_intervals) == 0):
+            return
 
         for i in range(len(time_intervals)):
             time_intervals[i] = numpy.log(time_intervals[i])
