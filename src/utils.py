@@ -3,6 +3,8 @@ import socket
 import struct
 import dpkt
 import operator
+import fcntl
+import array
 
 def eth_ntoa(buffer):
     """Converts a binary representation of a MAC address to the usual colon-separated version"""
@@ -91,4 +93,44 @@ def select_ip_in_pcap(pcap_file_path):
 
     return ip_addr
 
+
+
+def array_dat_exporter(file_path, array_data):
+    """Exports the data vector to file_path."""
+
+    with open(file_path, 'wb') as f:
+        for i in array_data:
+            f.write(str(i) + "\n")
+
+
+ 
+def list_interfaces():
+    """Generates a list of all the available network interfaces.
+    
+    Usage example:
+    
+    ifs = list_interfaces()
+    for i in ifs:
+        print "%12s   %s" % (i[0], i[1])
+        
+    Source: https://gist.github.com/pklaus/289646
+    """
+    
+    max_possible = 128  # arbitrary. raise if needed.
+    b = max_possible * 32
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    names = array.array('B', '\0' * b)
+    outbytes = struct.unpack('iL', fcntl.ioctl(
+        s.fileno(),
+        0x8912,  # SIOCGIFCONF
+        struct.pack('iL', b, names.buffer_info()[0])
+    ))[0]
+    namestr = names.tostring()
+    lst = []
+    for i in range(0, outbytes, 40):
+        name = namestr[i:i+16].split('\0', 1)[0]
+        ip   = str(ord(namestr[i+20])) + '.' + str(ord(namestr[i+21])) + "." + str(ord(namestr[i+22])) + "." + str(ord(namestr[i+23]))
+        
+        lst.append((name, ip))
+    return lst
 
