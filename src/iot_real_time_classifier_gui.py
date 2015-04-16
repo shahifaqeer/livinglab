@@ -14,6 +14,7 @@ class IoTClassifierGUI():
         self._sampling_seconds = 1
         self._memory_seconds = 60
         self._features_lag = 6
+        self._max_tree_depth = None
 
         self._parse_cli_params()
 
@@ -21,7 +22,7 @@ class IoTClassifierGUI():
         self._ip_selector = None
         self._ip_stats_viewer = None
 
-        self._iot_classifier_dt = DecisionTree(self._sampling_seconds, self._memory_seconds, self._features_lag, None)
+        self._iot_classifier_dt = DecisionTree(self._sampling_seconds, self._memory_seconds, self._features_lag, self._max_tree_depth)
 
         self._main_frame = urwid.Frame(urwid.Filler(urwid.Text(""), "top"))
 
@@ -34,6 +35,7 @@ class IoTClassifierGUI():
         parser.add_argument("-s", help="Sampling seconds parameter", type=int)
         parser.add_argument("-m", help="Memory seconds parameter", type=int)
         parser.add_argument("-f", help="Features lag parameter", type=int)
+        parser.add_argument("-d", help="Maximum tree depth. DEFAULT Unbounded", type=int)
         parser.add_argument("--debug", help="Log debug messages", action="count", default=0)
         args = parser.parse_args()
         
@@ -50,6 +52,9 @@ class IoTClassifierGUI():
             
         if (args.s is not None):
             self._sampling_seconds = int(args.s)
+
+        if (args.d is not None):
+            self._max_tree_depth = int(args.d)
             
         
 
@@ -74,7 +79,11 @@ class IoTClassifierGUI():
         header_text = urwid.Text(("header", "IoT Classifier v0.1 - Press \"q\" to Exit"), align="center")
         head = urwid.AttrMap(header_text, "header")
 
-        self._footer_text = urwid.Text("Sampling seconds: %d, Memory seconds: %d, Features lag: %d" % (self._sampling_seconds, self._memory_seconds, self._features_lag), align="left")
+        tree_depth = "Unbounded"
+        if (self._max_tree_depth is not None):
+            tree_depth = self._max_tree_depth
+
+        self._footer_text = urwid.Text("Sampling seconds: %d, Memory seconds: %d, Features lag: %d, Max tree depth: %s" % (self._sampling_seconds, self._memory_seconds, self._features_lag, tree_depth), align="left")
         foot = urwid.AttrMap(self._footer_text, "footer")
 
         interfaces_box = urwid.LineBox(self._net_selector.get_list_box(), title="Interfaces")
